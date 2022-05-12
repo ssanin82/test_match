@@ -163,5 +163,46 @@ def test_spread():
     ob.submit_order(Order(Side.SELL, Price(1100, 2), 10))
     assert isclose(0.5, ob.get_spread())
 
-# TODO cancel order
+
+def test_cancel_order():
+    ob = OrderBook()
+    o1 = Order(Side.SELL, Price(1000, 2), 10)
+    o2 = Order(Side.SELL, Price(990, 2), 11)
+    o3 = Order(Side.SELL, Price(1100, 2), 12)
+    o4 = Order(Side.SELL, Price(1000, 2), 13)
+    o5 = Order(Side.BUY, Price(900, 2), 10)
+    o6 = Order(Side.BUY, Price(890, 2), 11)
+    o7 = Order(Side.BUY, Price(910, 2), 12)
+    o8 = Order(Side.BUY, Price(912, 2), 13)
+    ob.submit_orders([o1, o2, o3, o4, o5, o6, o7, o8])
+
+    ask_levels = ob.get_ask_levels()
+    assert len(ask_levels) == 3
+    assert ask_levels[0] == (Price(990, 2), 11)
+    assert ask_levels[1] == (Price(1000, 2), 23)
+    assert ask_levels[2] == (Price(1100, 2), 12)
+    bid_levels = ob.get_bid_levels()
+    assert len(bid_levels) == 4
+    assert bid_levels[0] == (Price(912, 2), 13)
+    assert bid_levels[1] == (Price(910, 2), 12)
+    assert bid_levels[2] == (Price(900, 2), 10)
+    assert bid_levels[3] == (Price(890, 2), 11)
+
+    assert isclose(9.9 - 9.12, ob.get_spread())
+    assert ob.get_order_count() == 8
+    ob.cancel_order(o2.id)
+    assert isclose(10 - 9.12, ob.get_spread())
+    assert ob.get_order_count() == 7
+    ob.cancel_order(o8.id)
+    assert isclose(10 - 9.1, ob.get_spread())
+    assert ob.get_order_count() == 6
+
+    ob.cancel_order(o4.id)
+    ask_levels = ob.get_ask_levels()
+    assert len(ask_levels) == 2
+    assert ask_levels[0] == (Price(1000, 2), 10)
+    assert ask_levels[1] == (Price(1100, 2), 12)
+    assert isclose(10 - 9.1, ob.get_spread())
+
+
 # TODO ts sorted

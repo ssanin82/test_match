@@ -139,16 +139,31 @@ class OrderBook:
             print(t)
         return trades
 
+    def submit_orders(self, oo: list):
+        trades = list()
+        for o in oo:
+            trades += self.submit_order(o)
+        return trades
+
     def cancel_order(self, oid: int):
-        o = self.id_to_order[oid]
+        o = self.oid_to_order[oid]
+        del self.oid_to_order[oid]
         if Side.BUY == o.side:
-            k = (o.price, o.ts)
-            if k in self.bids[k]:
-                del self.bids[k] 
+            orders = self.bids[o.price]
+            for i, _o in enumerate(orders):
+                if _o.ts == o.ts:
+                    del orders[i]
+                    break
+            if not orders:
+                del self.bids[o.price]
         else:
-            k = (o.price, o.ts)
-            if k in self.asks[k]:
-                del self.asks[k] 
+            orders = self.asks[o.price]
+            for i, _o in enumerate(orders):
+                if _o.ts == o.ts:
+                    del orders[i]
+                    break
+            if not orders:
+                del self.asks[o.price]
 
 
 # def main():
