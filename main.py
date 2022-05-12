@@ -1,15 +1,15 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from sortedcontainers import SortedDict
 from math import isclose
+from datetime import datetime
 
 
 _id = 0
 
-# assume ts unique
-
 
 def get_unique_id():
+    global _id
     _id += 1
     return _id
 
@@ -19,29 +19,41 @@ class Side(Enum):
     SELL = 1
 
 
+@dataclass
 class Price:
+    # XXX for simplicity assuming digits(qty) >= decimals
     qty: int
     decimals: int
+
+    def to_float(self):
+        return self.qty / 10**self.decimals
+
+    def __lt__(self, other: "Price"):
+        return self.to_float() < other.to_float()
+
+    def __hash__(self):
+        return hash((self.qty, self.decimals))
 
 
 @dataclass
 class Order:
-    id: int
-    ts: float
+    side: Side
     price: Price
     qty: float
-    side: Side
+    id: int = field(default_factory=get_unique_id)
+    ts: float = field(default_factory=datetime.now)
 
 
 @dataclass
-class Level:
-    price: float
+class Trade:
+    oid: int
     qty: float
+    is_full: bool = False
 
 
 class OrderBook:
     def __init__(self) -> None:
-        self.bids = SortedDict(reversed=True)
+        self.bids = SortedDict()  # can inly get reverse iterator later
         self.asks = SortedDict()
         self.oid_to_order = dict()
 
@@ -52,6 +64,9 @@ class OrderBook:
     def get_asks(self):
         # TODO (price, qty)
         return self.asks.values()
+    
+    def get_order_count(self):
+        return len(self.oid_to_order)
 
     def get_spread(self):
         if self.bids and self.asks:
@@ -59,77 +74,53 @@ class OrderBook:
         else:
             return None
 
-    def _prepare(self, o: Order, ctr):
-        if o.price not in self.bids:
-            self.bids[o.price] = list()
-        self.bids[o.price].append(o)
-        self.bids[o.price].sort(key=lambda o: o.ts)
+    def _match(self, o: Order, orders, orders_opposite, reversed=False):
+        trades = list()
         to_remove = list()
-        for k, _o in self.asks.items():
-            price, _ = k
-            q = o.qty
-            if o.price > price:
-                q -= _o.qty
-                if q > 0:
-                    print(f"TRADE oid={o.id}, qty={o._qty}")
-                    print(f"TRADE oid={_o.id}, qty={_o.qty} full")
-                    to_remove.append((_o.id, _o.price, _o.ts))
-                elif isclose(q, 0):
-                    print(f"TRADE oid={o.id}, qty={o._qty} full")
-                    print(f"TRADE oid={_o.id}, qty={_o.qty} full")
-                    to_remove.append((o.id, o.price, o.ts))
-                    to_remove.append((_o.id, _o.price, _o.ts))
-                else:
-                    print(f"TRADE oid={o.id}, qty={o._qty} full")
-                    print(f"TRADE oid={_o.id}, qty={_o.qty}")
-                    to_remove.append((o.id, o.price, o.ts))
-        for _id, p, q in to_remove:
-            del self.id_to_order[o.oid]
-            del self.asks[(p, q)]
+        filled = False
+        for k in orders_opposite.__reversed__() if reversed else orders_opposite:
+            for _o in orders_opposite[k]:
+                if o.price > _o.price:
+                    o.qty -= _o.qty
+                    if o.qty > 0:
+                        trades.append(Trade(o.id, _o.qty))
+                        trades.append(Trade(_o.id, _o.qty, True))
+                        to_remove.append((_o.id, _o.price, _o.ts))
+                    elif isclose(o.qty, 0):
+                        trades.append(Trade(o.id, _o.qty, True))
+                        trades.append(Trade(_o.id, _o.qty, True))
+                        to_remove.append((_o.id, _o.price, _o.ts))
+                        filled = True
+                    else:
+                        trades.append(Trade(o.id, o.qty, True))
+                        trades.append(Trade(_o.id, o.qty))
+                        self.oid_to_order[_o].qty -= o.qty
+                        filled = True
+        for _id, p, ts in to_remove:
+            del self.oid_to_order[_id]
+            for i, oo in enumerate(orders_opposite[p]):
+                if oo.ts == ts:
+                    del orders_opposite[p][i]
+                    if not orders_opposite[p]:
+                        del orders_opposite[p]
+
+        if not filled:
+            if o.price not in orders:
+                orders[o.price] = list()
+            orders[o.price].append(o)
+            orders[o.price].sort(key=lambda o: o.ts)
+            self.oid_to_order[o.id] = o
+
+        return trades
 
     def submit_order(self, o: Order):
-        self.id_to_order[o.oid] = o
-
-        # prepare
         if Side.BUY == o.side:
-            # price -> list sorted by ts
-            if o.price not in self.bids():
-                self.bids[o.price] = list()
-            self.bids[o.price].append(o)
-            self.bids[o.price].sort(key=lambda o: o.ts)
-            to_remove = list()
-            for k, _o in self.asks.items():
-                price, _ = k
-                q = o.qty
-                if o.price > price:
-                    q -= _o.qty
-                    if q > 0:
-                        print(f"TRADE oid={o.id}, qty={o._qty}")
-                        print(f"TRADE oid={_o.id}, qty={_o.qty} full")
-                        to_remove.append((_o.id, _o.price, _o.ts))
-                    elif isclose(q, 0):
-                        print(f"TRADE oid={o.id}, qty={o._qty} full")
-                        print(f"TRADE oid={_o.id}, qty={_o.qty} full")
-                        to_remove.append((o.id, o.price, o.ts))
-                        to_remove.append((_o.id, _o.price, _o.ts))
-                    else:
-                        print(f"TRADE oid={o.id}, qty={o._qty} full")
-                        print(f"TRADE oid={_o.id}, qty={_o.qty}")
-                        to_remove.append((o.id, o.price, o.ts))
-            for _id, p, q in to_remove:
-                del self.id_to_order[o.oid]
-                del self.asks[(p, q)]
+            self._match(o, self.bids, self.asks, True)
         else:
-            if o.price not in self.asks():
-                self.asks[o.price] = list()
-            self.asks[o.price].append(o)
-            self.asks[o.price].sort(key=lambda o: o.ts)
-            #match
-            # TODO
-
+            self._match(o, self.asks, self.bids)
 
     def cancel_order(self, oid: int):
-        o = self.id_to_order[o.oid]
+        o = self.id_to_order[oid]
         if Side.BUY == o.side:
             k = (o.price, o.ts)
             if k in self.bids[k]:
@@ -141,4 +132,11 @@ class OrderBook:
 
 
 def main():
-    pass
+    o1 = Order(Side.BUY, Price(10023, 2), 10)
+    o2 = Order(Side.SELL, Price(10034, 2), 20)
+    o3 = Order(Side.BUY, Price(10543, 3), 30)
+    print(o1, o2, o3)
+
+
+if "__main__" == __name__:
+    main()
