@@ -41,6 +41,7 @@ class Order:
     price: Price
     qty: float
     id: int = field(default_factory=get_unique_id)
+    # XXX for simplicity assign time on order creation, not order submission
     ts: float = field(default_factory=datetime.now)
 
 

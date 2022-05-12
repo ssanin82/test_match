@@ -205,4 +205,31 @@ def test_cancel_order():
     assert isclose(10 - 9.1, ob.get_spread())
 
 
-# TODO ts sorted
+def test_multi_match_sell_timed():
+    ob = OrderBook()
+    o1 = Order(Side.BUY, Price(991, 2), 2)
+    o2 = Order(Side.BUY, Price(991, 2), 3)
+    o3 = Order(Side.BUY, Price(993, 2), 2)
+    o4 = Order(Side.SELL, Price(990, 2), 4)
+    o5 = Order(Side.SELL, Price(994, 2), 4)
+
+    ob.submit_order(o1)
+    ob.submit_order(o2)
+    ob.submit_order(o3)
+    assert ob.get_order_count() == 3
+    bid_levels = ob.get_bid_levels()
+    assert len(bid_levels) == 2
+    assert bid_levels[0] == (Price(993, 2), 2)
+    assert bid_levels[1] == (Price(991, 2), 5)
+
+    trades = ob.submit_order(o4)
+    trades += ob.submit_order(o5)
+    assert ob.get_order_count() == 2
+    assert len(trades) == 4
+    assert trades[0] == Trade(o4.id, 2, False)
+    assert trades[1] == Trade(o3.id, 2, True)
+    assert trades[2] == Trade(o4.id, 2, True)
+    assert trades[3] == Trade(o1.id, 2, True)
+    assert o3.price not in ob.bids
+    assert ob.bids[o2.price][0].qty == 3
+    assert isclose(9.94 - 9.91, ob.get_spread())
