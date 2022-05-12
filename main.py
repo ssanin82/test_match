@@ -51,7 +51,7 @@ class Trade:
     is_full: bool = False
 
     def __repr__(self) -> str:
-        return f"oid={self.oid}, qty={self.qty}, full={self.is_full}"
+        return f"(oid={self.oid}, qty={self.qty}, full={self.is_full})"
 
 
 class OrderBook:
@@ -60,21 +60,26 @@ class OrderBook:
         self.asks = SortedDict()
         self.oid_to_order = dict()
 
-    def get_bids(self):
-        # TODO list (price, qty)
-        # rev
-        return self.bids.values()
+    def get_bid_levels(self):
+        res = SortedDict()
+        for price, orders in self.bids.items():
+            res[price] = sum([o.qty for o in orders])
+        return list(reversed([(p, q) for p, q in res.items()]))
 
-    def get_asks(self):
-        # TODO (price, qty)
-        return self.asks.values()
+    def get_ask_levels(self):
+        res = SortedDict()
+        for price, orders in self.asks.items():
+            res[price] = sum([o.qty for o in orders])
+        return [(p, q) for p, q in res.items()]
     
     def get_order_count(self):
         return len(self.oid_to_order)
 
-    def get_spread(self):
+    def get_spread(self) -> float:
         if self.bids and self.asks:
-            return self.asks[0].price - self.bids[0].price
+            bbid = list(self.bids.keys())[-1].to_float()
+            bask = list(self.asks.keys())[0].to_float()
+            return bask - bbid
         else:
             return None
 
@@ -82,7 +87,7 @@ class OrderBook:
         trades = list()
         to_remove = list()
         filled = False
-        for k in orders_opposite.__reversed__() if not from_sell else orders_opposite:
+        for k in orders_opposite.__reversed__() if from_sell else orders_opposite:
             for _o in orders_opposite[k]:
                 if (
                     (not from_sell and o.price > _o.price)
@@ -98,11 +103,15 @@ class OrderBook:
                         trades.append(Trade(_o.id, _o.qty, True))
                         to_remove.append((_o.id, _o.price, _o.ts))
                         filled = True
+                        break
                     else:
                         trades.append(Trade(o.id, o.qty, True))
                         trades.append(Trade(_o.id, o.qty))
                         self.oid_to_order[_o.id].qty -= o.qty
                         filled = True
+                        break
+            if filled:
+                break
         for _id, p, ts in to_remove:
             del self.oid_to_order[_id]
             for i, oo in enumerate(orders_opposite[p]):
@@ -142,12 +151,12 @@ class OrderBook:
                 del self.asks[k] 
 
 
-def main():
-    o1 = Order(Side.BUY, Price(10023, 2), 10)
-    o2 = Order(Side.SELL, Price(10034, 2), 20)
-    o3 = Order(Side.BUY, Price(10543, 3), 30)
-    print(o1, o2, o3)
+# def main():
+#     o1 = Order(Side.BUY, Price(10023, 2), 10)
+#     o2 = Order(Side.SELL, Price(10034, 2), 20)
+#     o3 = Order(Side.BUY, Price(10543, 3), 30)
+#     print(o1, o2, o3)
 
 
-if "__main__" == __name__:
-    main()
+# if "__main__" == __name__:
+#     main()
